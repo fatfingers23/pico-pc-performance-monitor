@@ -1,0 +1,13 @@
+{
+    "rust-analyzer.check.allTargets": false,
+    "rust-analyzer.check.noDefaultFeatures": true,
+    "rust-analyzer.cargo.noDefaultFeatures": true,
+    "rust-analyzer.showUnlinkedFileNotification": false,
+    "rust-analyzer.cargo.target": "thumbv8m.main-none-eabihf",
+    "rust-analyzer.cargo.features": [],
+    "rust-analyzer.linkedProjects": [
+        "firmware/Cargo.toml",
+        "icd/Cargo.toml",
+        "host/Cargo.toml"
+    ]
+}

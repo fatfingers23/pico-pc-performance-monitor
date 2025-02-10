@@ -1,0 +1,9 @@
+[package]
+name = "host"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+poststation-sdk = "0.4.1"
+tokio = { version = "1.42.0", features = ["macros", "rt-multi-thread"] }
+icd = { path = "../icd" }
