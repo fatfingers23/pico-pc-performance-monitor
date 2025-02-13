@@ -38,6 +38,8 @@ static_cell = "2.1"
 icd = { path = "../icd" }
 embassy-embedded-hal = "0.3.0"
 ssd1306 = { version = "0.9.0", features = ["async", "graphics"] }
+tinybmp = "0.6.0"
+embedded-graphics = "0.8.1"
 
 [profile.release]
 debug = 2
@@ -59,4 +61,4 @@ codegen-units = 256
 rpath = false
 
 [patch.crates-io]
-ssd1306 = { git = "https://github.com/rust-embedded-community/ssd1306.git", rev = "f3a2f7aca421fbf3ddda45ecef0dfd1f0f12330e" }
+ssd1306 = { git = "https://github.com/rust-embedded-community/ssd1306.git", rev = "8d9ea7d558e69897f3634b4dee68977723fe1bc9" }

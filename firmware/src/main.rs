@@ -1,8 +1,8 @@
 #![no_std]
 #![no_main]
+use core::sync::atomic::{compiler_fence, Ordering};
 
 use app::AppTx;
-use defmt::info;
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_executor::Spawner;
 use embassy_rp::{
@@ -14,16 +14,19 @@ use embassy_rp::{
     usb,
 };
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, mutex::Mutex};
-use embassy_time::{Duration, Instant, Ticker, Timer};
+use embassy_time::{Duration, Instant, Ticker};
 use embassy_usb::{Config, UsbDevice};
+use embedded_graphics::{image::Image, pixelcolor::BinaryColor, prelude::Point, prelude::*};
 use postcard_rpc::{
     sender_fmt,
     server::{Dispatch, Sender, Server},
 };
 use ssd1306::{
-    prelude::DisplayRotation, size::DisplaySize128x64, I2CDisplayInterface, Ssd1306Async,
+    prelude::DisplayRotation, prelude::*, size::DisplaySize128x64, I2CDisplayInterface,
+    Ssd1306Async,
 };
 use static_cell::StaticCell;
+use tinybmp::Bmp;
 type I2c1Bus = Mutex<NoopRawMutex, I2c<'static, I2C1, i2c::Async>>;
 
 bind_interrupts!(pub struct Irqs {
@@ -35,6 +38,7 @@ use {defmt_rtt as _, panic_probe as _};
 
 pub mod app;
 pub mod handlers;
+pub mod io;
 
 #[link_section = ".start_block"]
 #[used]
@@ -45,8 +49,8 @@ pub static IMAGE_DEF: ImageDef = ImageDef::secure_exe();
 #[link_section = ".bi_entries"]
 #[used]
 pub static PICOTOOL_ENTRIES: [embassy_rp::binary_info::EntryAddr; 4] = [
-    embassy_rp::binary_info::rp_program_name!(c"RP2350 template"),
-    embassy_rp::binary_info::rp_program_description!(c"An example template for the RP2350"),
+    embassy_rp::binary_info::rp_program_name!(c"pc-usage-monitor"),
+    embassy_rp::binary_info::rp_program_description!(c"Display your computer's usage on a Pico"),
     embassy_rp::binary_info::rp_cargo_version!(),
     embassy_rp::binary_info::rp_program_build_attribute!(),
 ];
@@ -70,9 +74,9 @@ fn usb_config(serial: &'static str) -> Config<'static> {
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     // SYSTEM INIT
-    info!("Start");
     let p = embassy_rp::init(Default::default());
 
+    //This generates a unique serial number for the device
     let unique_id: u64 = embassy_rp::otp::get_chipid().unwrap();
     static SERIAL_STRING: StaticCell<[u8; 16]> = StaticCell::new();
     let mut ser_buf = [b' '; 16];
@@ -99,22 +103,45 @@ async fn main(spawner: Spawner) {
     let driver = usb::Driver::new(p.USB, Irqs);
     let pbufs = app::PBUFS.take();
     let config = usb_config(ser_buf);
+
     //Set up the LED
-    let led = Output::new(p.PIN_25, Level::Low);
+    let mut led = Output::new(p.PIN_25, Level::Low);
+
     //Setup the I2c bus to connect to the SSD1306 display
     let i2c = I2c::new_async(p.I2C1, p.PIN_27, p.PIN_26, Irqs, i2c::Config::default());
     static I2C_BUS: StaticCell<I2c1Bus> = StaticCell::new();
     let i2c_bus = I2C_BUS.init(Mutex::new(i2c));
 
+    // Set up for the SSD1206 display
+    let i2c_dev = I2cDevice::new(i2c_bus);
+    let interface = I2CDisplayInterface::new(i2c_dev);
+    let mut display = Ssd1306Async::new(interface, DisplaySize128x64, DisplayRotation::Rotate0)
+        .into_buffered_graphics_mode();
+    let display_init_result = display.init().await;
+    //If the display doesn't init since we do not have logging yet we will turn on the onboard LED
+    if display_init_result.is_err() {
+        led.set_high();
+        loop {
+            compiler_fence(Ordering::SeqCst);
+        }
+    }
+
+    // Displays the boot screen
+    let bmp_logo_data = include_bytes!("../pictures/logo-poststation.bmp");
+    let bmp_logo = Bmp::<BinaryColor>::from_slice(bmp_logo_data).unwrap();
+    let _ = Image::new(&bmp_logo, Point::new(0, 0)).draw(&mut display);
+    display.flush().await.unwrap();
+
     let context = app::Context {
         unique_id,
         led,
-        i2c_bus,
+        display,
     };
 
     let (device, tx_impl, rx_impl) =
         app::STORAGE.init_poststation(driver, config, pbufs.tx_buf.as_mut_slice());
     let dispatcher = app::MyApp::new(context, spawner.into());
+
     let vkk = dispatcher.min_key_len();
     let mut server: app::AppServer = Server::new(
         tx_impl,
@@ -124,16 +151,33 @@ async fn main(spawner: Spawner) {
         vkk,
     );
     let sender = server.sender();
+
     // We need to spawn the USB task so that USB messages are handled by
     // embassy-usb
     spawner.must_spawn(usb_task(device));
     spawner.must_spawn(logging_task(sender));
+    // spawner.must_spawn(boot_screen(i2c_bus));
 
+    let mut error_displaying = false;
     // Begin running!
     loop {
         // If the host disconnects, we'll return an error here.
         // If this happens, just wait until the host reconnects
+
         let _ = server.run().await;
+
+        if !error_displaying {
+            //If theres an error we only want it to show the first time. If it connects then this gets cleared on first display endpoint call
+            let i2c_dev = I2cDevice::new(i2c_bus);
+            let interface = I2CDisplayInterface::new(i2c_dev);
+            let mut display =
+                Ssd1306Async::new(interface, DisplaySize128x64, DisplayRotation::Rotate0)
+                    .into_terminal_mode();
+            let _ = display.clear().await;
+            let _ = display.write_str("\nCannot connect :(").await;
+
+            error_displaying = true;
+        }
     }
 }
 
@@ -151,17 +195,5 @@ pub async fn logging_task(sender: Sender<AppTx>) {
     loop {
         ticker.next().await;
         let _ = sender_fmt!(sender, "Uptime: {:?}", start.elapsed()).await;
-    }
-}
-
-#[embassy_executor::task]
-async fn boot_screen(i2c_bus: &'static I2c1Bus) {
-    let i2c_dev = I2cDevice::new(i2c_bus);
-    let interface = I2CDisplayInterface::new(i2c_dev);
-    let mut display_i2c = Ssd1306Async::new(interface, DisplaySize128x64, DisplayRotation::Rotate0)
-        .into_buffered_graphics_mode();
-    loop {
-        info!("i2c task A");
-        Timer::after_secs(1).await;
     }
 }

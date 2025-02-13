@@ -1,0 +1,9 @@
+{
+    "rust-analyzer.check.allTargets": false,
+    "rust-analyzer.cargo.features": [],
+    "rust-analyzer.linkedProjects": [
+        "firmware/Cargo.toml",
+        "icd/Cargo.toml",
+        "host/Cargo.toml"
+    ]
+}

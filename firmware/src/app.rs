@@ -1,10 +1,17 @@
 //! A basic postcard-rpc/poststation-compatible application
 
-use crate::handlers::{get_led, picoboot_reset, set_led, sleep_handler, unique_id};
-use crate::I2c1Bus;
+use crate::handlers::{
+    get_led, picoboot_reset, set_led, set_screen_text, sleep_handler, unique_id,
+};
+use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
+use embassy_rp::i2c::{self, I2c};
+use embassy_rp::peripherals::I2C1;
 use embassy_rp::{gpio::Output, peripherals::USB, usb};
-use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
-use icd::{GetLedEndpoint, GetUniqueIdEndpoint, RebootToPicoBoot, SetLedEndpoint, SleepEndpoint};
+use embassy_sync::blocking_mutex::raw::{NoopRawMutex, ThreadModeRawMutex};
+use icd::{
+    GetLedEndpoint, GetUniqueIdEndpoint, RebootToPicoBoot, SetDisplayEndpoint, SetLedEndpoint,
+    SleepEndpoint,
+};
 use icd::{ENDPOINT_LIST, TOPICS_IN_LIST, TOPICS_OUT_LIST};
 use postcard_rpc::server::impls::embassy_usb_v0_4::{
     dispatch_impl::{spawn_fn, WireRxBuf, WireRxImpl, WireSpawnImpl, WireStorage, WireTxImpl},
@@ -14,6 +21,9 @@ use postcard_rpc::{
     define_dispatch,
     server::{Server, SpawnContext},
 };
+use ssd1306::prelude::I2CInterface;
+use ssd1306::size::DisplaySize128x64;
+use ssd1306::Ssd1306Async;
 use static_cell::ConstStaticCell;
 
 /// Context contains the data that we will pass (as a mutable reference)
@@ -23,7 +33,11 @@ pub struct Context {
     /// server. This should be unique per device.
     pub unique_id: u64,
     pub led: Output<'static>,
-    pub i2c_bus: &'static mut I2c1Bus,
+    pub display: Ssd1306Async<
+        I2CInterface<I2cDevice<'static, NoopRawMutex, I2c<'static, I2C1, i2c::Async>>>,
+        DisplaySize128x64,
+        ssd1306::mode::BufferedGraphicsModeAsync<DisplaySize128x64>,
+    >,
 }
 
 impl SpawnContext for Context {
@@ -112,6 +126,7 @@ define_dispatch! {
         | SleepEndpoint             | spawn     | sleep_handler                 |
         | SetLedEndpoint            | blocking  | set_led                       |
         | GetLedEndpoint            | blocking  | get_led                       |
+        | SetDisplayEndpoint        | async     | set_screen_text               |
     };
 
     // Topics IN are messages we receive from the client, but that we do not reply

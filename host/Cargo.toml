@@ -5,5 +5,14 @@ edition = "2024"
 
 [dependencies]
 poststation-sdk = "0.4.1"
-tokio = { version = "1.42.0", features = ["macros", "rt-multi-thread"] }
-icd = { path = "../icd" }
+tokio = { version = "1.42.0", features = [
+    "macros",
+    "rt-multi-thread",
+    "process",
+    "signal",
+] }
+icd = { path = "../icd", features = ["use-std"] }
+sysinfo = "0.33.1"
+log = "0.4.25"
+env_logger = "0.11.6"
+dotenv = "0.15.0"

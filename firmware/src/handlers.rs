@@ -1,10 +1,26 @@
+use crate::{
+    app::{AppTx, Context, TaskContext},
+    io::Cursor,
+};
+use core::fmt::Write;
 use core::sync::atomic::{compiler_fence, Ordering};
-
 use embassy_time::{Instant, Timer};
-use icd::{LedState, SleepEndpoint, SleepMillis, SleptMillis};
+use embedded_graphics::{
+    mono_font::{
+        ascii::{self},
+        MonoTextStyle, MonoTextStyleBuilder,
+    },
+    pixelcolor::BinaryColor,
+    prelude::*,
+    text::{Baseline, Text},
+};
+use icd::{LedState, SleepEndpoint, SleepMillis, SleptMillis, SysInfo};
 use postcard_rpc::{header::VarHeader, server::Sender};
 
-use crate::app::{AppTx, Context, TaskContext};
+const TEXT_STYLE: MonoTextStyle<'static, BinaryColor> = MonoTextStyleBuilder::new()
+    .font(&ascii::FONT_8X13)
+    .text_color(BinaryColor::On)
+    .build();
 
 /// This is an example of a BLOCKING handler.
 pub fn unique_id(context: &mut Context, _header: VarHeader, _arg: ()) -> u64 {
@@ -33,6 +49,28 @@ pub fn get_led(context: &mut Context, _header: VarHeader, _arg: ()) -> LedState 
         true => LedState::Off,
         false => LedState::On,
     }
+}
+
+pub async fn set_screen_text<'a>(context: &mut Context, _header: VarHeader, arg: SysInfo<'a>) {
+    context.display.clear_buffer();
+
+    let buffer = &mut [0u8; 1024];
+    let mut cursor = Cursor::new(buffer);
+
+    let _ = write!(
+        &mut cursor,
+        "{}\nCPU:{} {}% \nRam:{}/{}\n\n{}",
+        arg.host_name,
+        arg.cpu_freq_text,
+        arg.cpu_usage,
+        arg.memory_usage,
+        arg.total_memory,
+        arg.scroll_text
+    );
+    Text::with_baseline(cursor.as_str(), Point::zero(), TEXT_STYLE, Baseline::Top)
+        .draw(&mut context.display)
+        .unwrap();
+    let _ = context.display.flush().await;
 }
 
 /// This is a SPAWN handler

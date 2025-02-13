@@ -126,9 +126,9 @@ dependencies = [
 
 [[package]]
 name = "postcard-rpc"
-version = "0.11.0"
+version = "0.11.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e25a7b11aed2642b76ebfa73005b04ae039ab10b7f3146b3a6f48a2c16c44a38"
+checksum = "0f7d2766b4458f45317a892a5a427b37b49efab1f0c58d5b4494c5e815cd2f57"
 dependencies = [
  "heapless 0.8.0",
  "portable-atomic",
@@ -139,9 +139,9 @@ dependencies = [
 
 [[package]]
 name = "postcard-schema"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7532d2f032349d41dc760c9fe5247fcb5660c689caf4884822603983a5a9a66"
+checksum = "8035e2716f5fc9dc2bd86d6bee40ef054aad7e437d3c126ffb22026f15948e15"
 dependencies = [
  "postcard-derive",
  "serde",
